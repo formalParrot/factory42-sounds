@@ -313,11 +313,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
 	}
 
 	if (interaction.commandName === "balance") {
-		settleUser(interaction.user.id);
-		const account = getUserAccount(interaction.user.id);
+		const member = interaction.options.getMember("member") ?? interaction.member;
+		const userId = member.id;
+		settleUser(userId);
+		const account = getUserAccount(userId);
 		saveEconomy();
 		await interaction.reply(
-			`Balance: €${account.balance}\nOwned sounds: ${account.sounds.length ? account.sounds.map(getSoundName).join(", ") : "none"}`,
+			`${member.displayName}'s balance: €${account.balance}\nOwned sounds: ${account.sounds.length ? account.sounds.map(getSoundName).join(", ") : "none"}`,
 		);
 		return;
 	}

@@ -1,7 +1,12 @@
 const { SlashCommandBuilder } = require("discord.js");
 
 const commands = [
-	new SlashCommandBuilder().setName("balance").setDescription("Show your sound balance"),
+	new SlashCommandBuilder()
+		.setName("balance")
+		.setDescription("Show a player's sound balance")
+		.addUserOption((option) =>
+			option.setName("member").setDescription("The player to check").setRequired(false),
+		),
 	new SlashCommandBuilder()
 		.setName("buy")
 		.setDescription("Buy a sound with your voice-channel earnings")
