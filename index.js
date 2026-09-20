@@ -23,16 +23,24 @@ if (!DISCORD_TOKEN || !GUILD_ID || !VOICE_CHANNEL_ID) {
 const JOIN_DELAY_MS = 1500;
 const EURO_PER_MINUTE = 1;
 const ECONOMY_FILE = path.join(__dirname, "economy.json");
+const ECONOMY_ROLE_NAME = "craete events";
 
-// ---- Sounds: drop join.(mp3|wav|ogg) and leave.(mp3|wav|ogg) in ./sounds ----
+// ---- Sounds: join.mp3 and leave.mp3 are the default sounds ----
 function findSound(name) {
 	for (const ext of ["mp3", "wav", "ogg"]) {
-		const p = path.join(__dirname, "sounds", `${name}.${ext}`);
-		if (fs.existsSync(p)) return p;
+		const soundPath = path.join(__dirname, "sounds", `${name}.${ext}`);
+		if (fs.existsSync(soundPath)) return soundPath;
 	}
 	throw new Error(`No sounds/${name}.(mp3|wav|ogg) found`);
 }
-const SOUNDS = { join: findSound("join"), leave: findSound("leave") };
+
+const SOUNDS = {
+	join: path.join(__dirname, "sounds", "join.mp3"),
+	leave: path.join(__dirname, "sounds", "leave.mp3"),
+};
+if (!fs.existsSync(SOUNDS.join) || !fs.existsSync(SOUNDS.leave)) {
+	throw new Error("sounds/join.mp3 and sounds/leave.mp3 are required");
+}
 
 function getShopSounds() {
 	return fs
@@ -43,20 +51,33 @@ function getShopSounds() {
 				["mp3", "wav", "ogg"].includes(path.extname(entry.name).slice(1).toLowerCase()),
 		)
 		.map((entry) => path.basename(entry.name, path.extname(entry.name)))
-		.filter((name) => !["join", "leave"].includes(name))
+		.filter((name) => name.startsWith("c-"))
+		.filter((name) => !["c-join", "c-leave"].includes(name))
 		.filter((name, index, names) => names.indexOf(name) === index)
 		.sort();
 }
 
 const SHOP_SOUNDS = getShopSounds();
 const SOUND_PRICES = {
-	// Add sound filenames here when they should cost something other than €1.
+	// Add sound names here when they should cost something other than €1.
 	// Example: "airhorn": 5,
 };
 const DEFAULT_SOUND_PRICE = 1;
 
 function getSoundPrice(sound) {
-	return SOUND_PRICES[sound] ?? DEFAULT_SOUND_PRICE;
+	return SOUND_PRICES[sound] ?? SOUND_PRICES[sound.slice(2)] ?? DEFAULT_SOUND_PRICE;
+}
+
+function getSoundName(sound) {
+	return sound.slice(2);
+}
+
+function getSoundFile(sound) {
+	return findSound(sound);
+}
+
+function getSoundId(displayName) {
+	return `c-${displayName}`;
 }
 
 
@@ -80,7 +101,9 @@ function saveEconomy() {
 }
 
 function getUserAccount(userId) {
-	if (!economy.users[userId]) economy.users[userId] = { balance: 0, sounds: [] };
+	if (!economy.users[userId]) economy.users[userId] = { balance: 0, sounds: [], equipped: null };
+	if (!Array.isArray(economy.users[userId].sounds)) economy.users[userId].sounds = [];
+	if (!Object.hasOwn(economy.users[userId], "equipped")) economy.users[userId].equipped = null;
 	return economy.users[userId];
 }
 
@@ -105,10 +128,29 @@ function settleAllActiveUsers() {
 
 async function registerCommands() {
 	const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
-	await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), {
+	const registeredCommands = await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), {
 		body: commands,
 	});
-	console.log("Registered /balance and /buy.");
+
+	const role = client.guilds.cache.get(GUILD_ID)?.roles.cache.find(
+		(guildRole) => guildRole.name === ECONOMY_ROLE_NAME,
+	);
+	const restrictedCommands = registeredCommands.filter((command) =>
+		["give", "take"].includes(command.name),
+	);
+	if (!role) {
+		console.error(`Role "${ECONOMY_ROLE_NAME}" was not found; /give and /take remain hidden.`);
+		return;
+	}
+
+	for (const command of restrictedCommands) {
+		await rest.put(Routes.applicationCommandPermissions(client.user.id, GUILD_ID, command.id), {
+			body: {
+				permissions: [{ id: role.id, type: 1, permission: true }],
+			},
+		});
+	}
+	console.log("Registered commands; /give and /take are restricted to the craete events role.");
 }
 
 // ---- Client & player ----
@@ -194,7 +236,10 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
 
 	if (!wasIn && isIn) {
 		activeVoiceSessions.set(newState.id, Date.now());
-		setTimeout(() => enqueue(SOUNDS.join), JOIN_DELAY_MS);
+		setTimeout(() => {
+			const account = getUserAccount(newState.id);
+			enqueue(account.equipped ? getSoundFile(account.equipped) : SOUNDS.join);
+		}, JOIN_DELAY_MS);
 	} else if (wasIn && !isIn) {
 		settleUser(oldState.id);
 		activeVoiceSessions.delete(oldState.id);
@@ -206,26 +251,46 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
 	if (interaction.isAutocomplete()) {
-		if (interaction.commandName !== "buy") return;
+		if (![
+			"buy",
+			"equip",
+		].includes(interaction.commandName)) return;
 		const account = getUserAccount(interaction.user.id);
 		const query = interaction.options.getString("sound", true).toLowerCase();
-		const choices = SHOP_SOUNDS.filter(
-			(sound) => !account.sounds.includes(sound) && sound.toLowerCase().includes(query),
-		).slice(0, 25);
+		const choices = SHOP_SOUNDS.filter((sound) => {
+			const isBuy = interaction.commandName === "buy";
+			const available = isBuy ? !account.sounds.includes(sound) : account.sounds.includes(sound);
+			return available && getSoundName(sound).toLowerCase().includes(query);
+		}).slice(0, 25);
 		await interaction.respond(
-			choices.map((sound) => ({ name: `${sound} - €${getSoundPrice(sound)}`, value: sound })),
+			choices.map((sound) => ({
+				name: interaction.commandName === "buy"
+					? `${getSoundName(sound)} - €${getSoundPrice(sound)}`
+					: getSoundName(sound),
+				value: getSoundName(sound),
+			})),
 		);
 		return;
 	}
 
 	if (!interaction.isChatInputCommand()) return;
 
+	if (["give", "take"].includes(interaction.commandName)) {
+		const hasEconomyRole = interaction.member?.roles.cache.some(
+			(role) => role.name === ECONOMY_ROLE_NAME,
+		);
+		if (!hasEconomyRole) {
+			await interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
+			return;
+		}
+	}
+
 	if (interaction.commandName === "balance") {
 		settleUser(interaction.user.id);
 		const account = getUserAccount(interaction.user.id);
 		saveEconomy();
 		await interaction.reply(
-			`Balance: €${account.balance}\nOwned sounds: ${account.sounds.length ? account.sounds.join(", ") : "none"}`,
+			`Balance: €${account.balance}\nOwned sounds: ${account.sounds.length ? account.sounds.map(getSoundName).join(", ") : "none"}`,
 		);
 		return;
 	}
@@ -233,7 +298,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 	if (interaction.commandName === "buy") {
 		settleUser(interaction.user.id);
 		const account = getUserAccount(interaction.user.id);
-		const sound = interaction.options.getString("sound", true);
+		const sound = getSoundId(interaction.options.getString("sound", true));
 
 		if (!SHOP_SOUNDS.includes(sound)) {
 			await interaction.reply({ content: "That sound is not available.", ephemeral: true });
@@ -252,7 +317,47 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		account.balance -= price;
 		account.sounds.push(sound);
 		saveEconomy();
-		await interaction.reply(`Bought **${sound}** for €${price}. Your balance is €${account.balance}.`);
+		await interaction.reply(`Bought **${getSoundName(sound)}** for €${price}. Your balance is €${account.balance}.`);
+		return;
+	}
+
+	if (interaction.commandName === "equip") {
+		const account = getUserAccount(interaction.user.id);
+		const sound = getSoundId(interaction.options.getString("sound", true));
+
+		if (!SHOP_SOUNDS.includes(sound) || !account.sounds.includes(sound)) {
+			await interaction.reply({ content: "You do not own that sound.", ephemeral: true });
+			return;
+		}
+
+		account.equipped = sound;
+		saveEconomy();
+		await interaction.reply(`Equipped **${getSoundName(sound)}** for when you join.`);
+		return;
+	}
+
+	if (["give", "take"].includes(interaction.commandName)) {
+		const target = interaction.options.getMember("member");
+		const amount = interaction.options.getInteger("euro", true);
+		if (!target) {
+			await interaction.reply({ content: "That member is not in this server.", ephemeral: true });
+			return;
+		}
+
+		const account = getUserAccount(target.id);
+		settleUser(target.id);
+		if (interaction.commandName === "take" && account.balance < amount) {
+			await interaction.reply({
+				content: `${target.displayName} only has €${account.balance}.`,
+				ephemeral: true,
+			});
+			return;
+		}
+
+		account.balance += interaction.commandName === "give" ? amount : -amount;
+		saveEconomy();
+		const action = interaction.commandName === "give" ? "Gave" : "Took";
+		await interaction.reply(`${action} €${amount} ${interaction.commandName === "give" ? "to" : "from"} ${target}. Their balance is €${account.balance}.`);
 	}
 });
 
