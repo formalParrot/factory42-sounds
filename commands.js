@@ -25,7 +25,6 @@ const commands = [
 	new SlashCommandBuilder()
 		.setName("give")
 		.setDescription("Give euros to a member")
-		.setDefaultMemberPermissions("0")
 		.addUserOption((option) =>
 			option.setName("member").setDescription("The member to give euros to").setRequired(true),
 		)
@@ -39,7 +38,6 @@ const commands = [
 	new SlashCommandBuilder()
 		.setName("take")
 		.setDescription("Take euros from a member")
-		.setDefaultMemberPermissions("0")
 		.addUserOption((option) =>
 			option.setName("member").setDescription("The member to take euros from").setRequired(true),
 		)
@@ -50,6 +48,9 @@ const commands = [
 				.setMinValue(1)
 				.setRequired(true),
 		),
+	new SlashCommandBuilder()
+		.setName("leaderboard")
+		.setDescription("Show the richest members"),
 ].map((command) => command.toJSON());
 
 module.exports = commands;

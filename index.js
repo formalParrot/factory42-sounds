@@ -148,35 +148,19 @@ async function registerCommands() {
 			body: commands,
 		},
 	);
-
-	const role = client.guilds.cache.get(GUILD_ID)?.roles.cache.get(ECONOMY_ROLE_ID);
-	const restrictedCommands = registeredCommands.filter((command) =>
-		["give", "take"].includes(command.name),
-	);
-	if (!role) {
-		console.error(
-			`Role ${ECONOMY_ROLE_ID} was not found; /give and /take remain hidden.`,
-		);
-		return;
+	for (const command of registeredCommands.filter((entry) => ["give", "take"].includes(entry.name))) {
+		try {
+			await rest.put(
+				Routes.applicationCommandPermissions(client.user.id, GUILD_ID, command.id),
+				{ body: { permissions: [] } },
+			);
+		} catch (err) {
+			console.warn(
+				`Could not clear old permissions for /${command.name}. The bot may need Manage Server: ${err.message}`,
+			);
+		}
 	}
-
-	for (const command of restrictedCommands) {
-		await rest.put(
-			Routes.applicationCommandPermissions(
-				client.user.id,
-				GUILD_ID,
-				command.id,
-			),
-			{
-				body: {
-					permissions: [{ id: role.id, type: 1, permission: true }],
-				},
-			},
-		);
-	}
-	console.log(
-		`Registered commands; /give and /take are restricted to role ${ECONOMY_ROLE_ID}.`,
-	);
+	console.log("Registered commands; /give and /take use runtime role checks.");
 }
 
 // ---- Client & player ----
@@ -280,21 +264,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		if (!["buy", "equip"].includes(interaction.commandName)) return;
 		const account = getUserAccount(interaction.user.id);
 		const query = interaction.options.getString("sound", true).toLowerCase();
+		const defaultChoice = interaction.commandName === "equip" && "default".includes(query)
+			? [{ name: "Default", value: "default" }]
+			: [];
 		const choices = SHOP_SOUNDS.filter((sound) => {
 			const isBuy = interaction.commandName === "buy";
 			const available = isBuy
 				? !account.sounds.includes(sound)
 				: account.sounds.includes(sound);
 			return available && getSoundName(sound).toLowerCase().includes(query);
-		}).slice(0, 25);
+		}).slice(0, 25 - defaultChoice.length);
 		await interaction.respond(
-			choices.map((sound) => ({
+			defaultChoice.concat(choices.map((sound) => ({
 				name:
 					interaction.commandName === "buy"
 						? `${getSoundName(sound)} - €${getSoundPrice(sound)}`
 						: getSoundName(sound),
 				value: getSoundName(sound),
-			})),
+			}))),
 		);
 		return;
 	}
@@ -318,6 +305,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		saveEconomy();
 		await interaction.reply(
 			`Balance: €${account.balance}\nOwned sounds: ${account.sounds.length ? account.sounds.map(getSoundName).join(", ") : "none"}`,
+		);
+		return;
+	}
+
+	if (interaction.commandName === "leaderboard") {
+		settleAllActiveUsers();
+		const entries = Object.entries(economy.users)
+			.sort(([, first], [, second]) => second.balance - first.balance)
+			.slice(0, 10);
+		const lines = entries.map(([userId, account], index) =>
+			`${index + 1}. <@${userId}> - €${account.balance}`,
+		);
+		await interaction.reply(
+			lines.length ? `**Euro leaderboard**\n${lines.join("\n")}` : "The leaderboard is empty.",
 		);
 		return;
 	}
@@ -361,7 +362,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 	if (interaction.commandName === "equip") {
 		const account = getUserAccount(interaction.user.id);
-		const sound = getSoundId(interaction.options.getString("sound", true));
+		const selectedSound = interaction.options.getString("sound", true);
+		if (selectedSound.toLowerCase() === "default") {
+			account.equipped = null;
+			saveEconomy();
+			await interaction.reply("Equipped **Default** for when you join.");
+			return;
+		}
+		const sound = getSoundId(selectedSound);
 
 		if (!SHOP_SOUNDS.includes(sound) || !account.sounds.includes(sound)) {
 			await interaction.reply({
