@@ -1,7 +1,13 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const { Client, GatewayIntentBits, Events, REST, Routes } = require("discord.js");
+const {
+	Client,
+	GatewayIntentBits,
+	Events,
+	REST,
+	Routes,
+} = require("discord.js");
 const commands = require("./commands");
 const {
 	joinVoiceChannel,
@@ -23,7 +29,7 @@ if (!DISCORD_TOKEN || !GUILD_ID || !VOICE_CHANNEL_ID) {
 const JOIN_DELAY_MS = 1500;
 const EURO_PER_MINUTE = 1;
 const ECONOMY_FILE = path.join(__dirname, "economy.json");
-const ECONOMY_ROLE_NAME = "craete events";
+const ECONOMY_ROLE_NAME = "create events";
 
 // ---- Sounds: join.mp3 and leave.mp3 are the default sounds ----
 function findSound(name) {
@@ -48,7 +54,9 @@ function getShopSounds() {
 		.filter(
 			(entry) =>
 				entry.isFile() &&
-				["mp3", "wav", "ogg"].includes(path.extname(entry.name).slice(1).toLowerCase()),
+				["mp3", "wav", "ogg"].includes(
+					path.extname(entry.name).slice(1).toLowerCase(),
+				),
 		)
 		.map((entry) => path.basename(entry.name, path.extname(entry.name)))
 		.filter((name) => name.startsWith("c-"))
@@ -65,7 +73,9 @@ const SOUND_PRICES = {
 const DEFAULT_SOUND_PRICE = 1;
 
 function getSoundPrice(sound) {
-	return SOUND_PRICES[sound] ?? SOUND_PRICES[sound.slice(2)] ?? DEFAULT_SOUND_PRICE;
+	return (
+		SOUND_PRICES[sound] ?? SOUND_PRICES[sound.slice(2)] ?? DEFAULT_SOUND_PRICE
+	);
 }
 
 function getSoundName(sound) {
@@ -80,19 +90,19 @@ function getSoundId(displayName) {
 	return `c-${displayName}`;
 }
 
-
-
 function loadEconomy() {
 	try {
 		return JSON.parse(fs.readFileSync(ECONOMY_FILE, "utf8"));
 	} catch (err) {
-		if (err.code !== "ENOENT") console.error("Failed to read economy.json:", err.message);
+		if (err.code !== "ENOENT")
+			console.error("Failed to read economy.json:", err.message);
 		return { users: {} };
 	}
 }
 
 let economy = loadEconomy();
-if (!economy.users || typeof economy.users !== "object") economy = { users: {} };
+if (!economy.users || typeof economy.users !== "object")
+	economy = { users: {} };
 
 function saveEconomy() {
 	const temporaryFile = `${ECONOMY_FILE}.tmp`;
@@ -101,9 +111,12 @@ function saveEconomy() {
 }
 
 function getUserAccount(userId) {
-	if (!economy.users[userId]) economy.users[userId] = { balance: 0, sounds: [], equipped: null };
-	if (!Array.isArray(economy.users[userId].sounds)) economy.users[userId].sounds = [];
-	if (!Object.hasOwn(economy.users[userId], "equipped")) economy.users[userId].equipped = null;
+	if (!economy.users[userId])
+		economy.users[userId] = { balance: 0, sounds: [], equipped: null };
+	if (!Array.isArray(economy.users[userId].sounds))
+		economy.users[userId].sounds = [];
+	if (!Object.hasOwn(economy.users[userId], "equipped"))
+		economy.users[userId].equipped = null;
 	return economy.users[userId];
 }
 
@@ -122,35 +135,50 @@ function settleUser(userId, now = Date.now()) {
 
 function settleAllActiveUsers() {
 	let changed = false;
-	for (const userId of activeVoiceSessions.keys()) changed = settleUser(userId) > 0 || changed;
+	for (const userId of activeVoiceSessions.keys())
+		changed = settleUser(userId) > 0 || changed;
 	if (changed) saveEconomy();
 }
 
 async function registerCommands() {
 	const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
-	const registeredCommands = await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), {
-		body: commands,
-	});
-
-	const role = client.guilds.cache.get(GUILD_ID)?.roles.cache.find(
-		(guildRole) => guildRole.name === ECONOMY_ROLE_NAME,
+	const registeredCommands = await rest.put(
+		Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+		{
+			body: commands,
+		},
 	);
+
+	const role = client.guilds.cache
+		.get(GUILD_ID)
+		?.roles.cache.find((guildRole) => guildRole.name === ECONOMY_ROLE_NAME);
 	const restrictedCommands = registeredCommands.filter((command) =>
 		["give", "take"].includes(command.name),
 	);
 	if (!role) {
-		console.error(`Role "${ECONOMY_ROLE_NAME}" was not found; /give and /take remain hidden.`);
+		console.error(
+			`Role "${ECONOMY_ROLE_NAME}" was not found; /give and /take remain hidden.`,
+		);
 		return;
 	}
 
 	for (const command of restrictedCommands) {
-		await rest.put(Routes.applicationCommandPermissions(client.user.id, GUILD_ID, command.id), {
-			body: {
-				permissions: [{ id: role.id, type: 1, permission: true }],
+		await rest.put(
+			Routes.applicationCommandPermissions(
+				client.user.id,
+				GUILD_ID,
+				command.id,
+			),
+			{
+				body: {
+					permissions: [{ id: role.id, type: 1, permission: true }],
+				},
 			},
-		});
+		);
 	}
-	console.log("Registered commands; /give and /take are restricted to the craete events role.");
+	console.log(
+		"Registered commands; /give and /take are restricted to the craete events role.",
+	);
 }
 
 // ---- Client & player ----
@@ -251,22 +279,22 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
 	if (interaction.isAutocomplete()) {
-		if (![
-			"buy",
-			"equip",
-		].includes(interaction.commandName)) return;
+		if (!["buy", "equip"].includes(interaction.commandName)) return;
 		const account = getUserAccount(interaction.user.id);
 		const query = interaction.options.getString("sound", true).toLowerCase();
 		const choices = SHOP_SOUNDS.filter((sound) => {
 			const isBuy = interaction.commandName === "buy";
-			const available = isBuy ? !account.sounds.includes(sound) : account.sounds.includes(sound);
+			const available = isBuy
+				? !account.sounds.includes(sound)
+				: account.sounds.includes(sound);
 			return available && getSoundName(sound).toLowerCase().includes(query);
 		}).slice(0, 25);
 		await interaction.respond(
 			choices.map((sound) => ({
-				name: interaction.commandName === "buy"
-					? `${getSoundName(sound)} - €${getSoundPrice(sound)}`
-					: getSoundName(sound),
+				name:
+					interaction.commandName === "buy"
+						? `${getSoundName(sound)} - €${getSoundPrice(sound)}`
+						: getSoundName(sound),
 				value: getSoundName(sound),
 			})),
 		);
@@ -280,7 +308,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
 			(role) => role.name === ECONOMY_ROLE_NAME,
 		);
 		if (!hasEconomyRole) {
-			await interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
+			await interaction.reply({
+				content: "You do not have permission to use this command.",
+				ephemeral: true,
+			});
 			return;
 		}
 	}
@@ -301,23 +332,34 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		const sound = getSoundId(interaction.options.getString("sound", true));
 
 		if (!SHOP_SOUNDS.includes(sound)) {
-			await interaction.reply({ content: "That sound is not available.", ephemeral: true });
+			await interaction.reply({
+				content: "That sound is not available.",
+				ephemeral: true,
+			});
 			return;
 		}
 		if (account.sounds.includes(sound)) {
-			await interaction.reply({ content: "You already own that sound.", ephemeral: true });
+			await interaction.reply({
+				content: "You already own that sound.",
+				ephemeral: true,
+			});
 			return;
 		}
 		const price = getSoundPrice(sound);
 		if (account.balance < price) {
-			await interaction.reply({ content: `You need €${price} to buy that sound.`, ephemeral: true });
+			await interaction.reply({
+				content: `You need €${price} to buy that sound.`,
+				ephemeral: true,
+			});
 			return;
 		}
 
 		account.balance -= price;
 		account.sounds.push(sound);
 		saveEconomy();
-		await interaction.reply(`Bought **${getSoundName(sound)}** for €${price}. Your balance is €${account.balance}.`);
+		await interaction.reply(
+			`Bought **${getSoundName(sound)}** for €${price}. Your balance is €${account.balance}.`,
+		);
 		return;
 	}
 
@@ -326,13 +368,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		const sound = getSoundId(interaction.options.getString("sound", true));
 
 		if (!SHOP_SOUNDS.includes(sound) || !account.sounds.includes(sound)) {
-			await interaction.reply({ content: "You do not own that sound.", ephemeral: true });
+			await interaction.reply({
+				content: "You do not own that sound.",
+				ephemeral: true,
+			});
 			return;
 		}
 
 		account.equipped = sound;
 		saveEconomy();
-		await interaction.reply(`Equipped **${getSoundName(sound)}** for when you join.`);
+		await interaction.reply(
+			`Equipped **${getSoundName(sound)}** for when you join.`,
+		);
 		return;
 	}
 
@@ -340,7 +387,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		const target = interaction.options.getMember("member");
 		const amount = interaction.options.getInteger("euro", true);
 		if (!target) {
-			await interaction.reply({ content: "That member is not in this server.", ephemeral: true });
+			await interaction.reply({
+				content: "That member is not in this server.",
+				ephemeral: true,
+			});
 			return;
 		}
 
@@ -357,7 +407,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		account.balance += interaction.commandName === "give" ? amount : -amount;
 		saveEconomy();
 		const action = interaction.commandName === "give" ? "Gave" : "Took";
-		await interaction.reply(`${action} €${amount} ${interaction.commandName === "give" ? "to" : "from"} ${target}. Their balance is €${account.balance}.`);
+		await interaction.reply(
+			`${action} €${amount} ${interaction.commandName === "give" ? "to" : "from"} ${target}. Their balance is €${account.balance}.`,
+		);
 	}
 });
 
@@ -368,7 +420,9 @@ client.once(Events.ClientReady, () => {
 	for (const member of voiceChannel?.members.values() ?? []) {
 		if (!member.user.bot) activeVoiceSessions.set(member.id, Date.now());
 	}
-	registerCommands().catch((err) => console.error("Failed to register commands:", err.message));
+	registerCommands().catch((err) =>
+		console.error("Failed to register commands:", err.message),
+	);
 	connect().catch(console.error);
 	// Watchdog: make sure we're always in the channel
 	setInterval(() => connect().catch(console.error), 30_000);
