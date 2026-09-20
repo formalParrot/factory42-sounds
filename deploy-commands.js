@@ -8,7 +8,17 @@ if (!DISCORD_TOKEN || !GUILD_ID) {
 	process.exit(1);
 }
 
-const applicationId = APPLICATION_ID || DISCORD_TOKEN.split(".")[0];
+function tokenToApplicationId(token) {
+	const idSegment = token.split(".")[0];
+	const padded = idSegment.replace(/-/g, "+").replace(/_/g, "/");
+	const decoded = Buffer.from(
+		padded + "=".repeat((4 - (padded.length % 4)) % 4),
+		"base64",
+	).toString("utf8");
+	return /^\d+$/.test(decoded) ? decoded : idSegment;
+}
+
+const applicationId = APPLICATION_ID || tokenToApplicationId(DISCORD_TOKEN);
 
 const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
 
