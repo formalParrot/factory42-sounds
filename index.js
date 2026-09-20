@@ -19,7 +19,7 @@ if (!DISCORD_TOKEN || !GUILD_ID || !VOICE_CHANNEL_ID) {
 	process.exit(1);
 }
 
-const JOIN_DELAY_MS = 1000;
+const JOIN_DELAY_MS = 1500;
 
 // ---- Sounds: drop join.(mp3|wav|ogg) and leave.(mp3|wav|ogg) in ./sounds ----
 function findSound(name) {
