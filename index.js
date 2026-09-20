@@ -1,7 +1,14 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const { Client, GatewayIntentBits, Events } = require("discord.js");
+const {
+	Client,
+	GatewayIntentBits,
+	Events,
+	REST,
+	Routes,
+	SlashCommandBuilder,
+} = require("discord.js");
 const {
 	joinVoiceChannel,
 	getVoiceConnection,
@@ -20,6 +27,8 @@ if (!DISCORD_TOKEN || !GUILD_ID || !VOICE_CHANNEL_ID) {
 }
 
 const JOIN_DELAY_MS = 1500;
+const EURO_PER_MINUTE = 1;
+const ECONOMY_FILE = path.join(__dirname, "economy.json");
 
 // ---- Sounds: drop join.(mp3|wav|ogg) and leave.(mp3|wav|ogg) in ./sounds ----
 function findSound(name) {
@@ -31,10 +40,90 @@ function findSound(name) {
 }
 const SOUNDS = { join: findSound("join"), leave: findSound("leave") };
 
+function getShopSounds() {
+	return fs
+		.readdirSync(path.join(__dirname, "sounds"), { withFileTypes: true })
+		.filter(
+			(entry) =>
+				entry.isFile() &&
+				["mp3", "wav", "ogg"].includes(path.extname(entry.name).slice(1).toLowerCase()),
+		)
+		.map((entry) => path.basename(entry.name, path.extname(entry.name)))
+		.filter((name) => !["join", "leave"].includes(name))
+		.filter((name, index, names) => names.indexOf(name) === index)
+		.sort();
+}
+
+const SHOP_SOUNDS = getShopSounds();
+const commands = [
+	new SlashCommandBuilder().setName("balance").setDescription("Show your sound balance"),
+	new SlashCommandBuilder()
+		.setName("buy")
+		.setDescription("Buy a sound with your voice-channel earnings")
+		.addStringOption((option) =>
+			option
+				.setName("sound")
+				.setDescription("The sound to buy")
+				.setRequired(true)
+				.setAutocomplete(true),
+		),
+].map((command) => command.toJSON());
+
+function loadEconomy() {
+	try {
+		return JSON.parse(fs.readFileSync(ECONOMY_FILE, "utf8"));
+	} catch (err) {
+		if (err.code !== "ENOENT") console.error("Failed to read economy.json:", err.message);
+		return { users: {} };
+	}
+}
+
+let economy = loadEconomy();
+if (!economy.users || typeof economy.users !== "object") economy = { users: {} };
+
+function saveEconomy() {
+	const temporaryFile = `${ECONOMY_FILE}.tmp`;
+	fs.writeFileSync(temporaryFile, `${JSON.stringify(economy, null, 2)}\n`);
+	fs.renameSync(temporaryFile, ECONOMY_FILE);
+}
+
+function getUserAccount(userId) {
+	if (!economy.users[userId]) economy.users[userId] = { balance: 0, sounds: [] };
+	return economy.users[userId];
+}
+
+function settleUser(userId, now = Date.now()) {
+	const startedAt = activeVoiceSessions.get(userId);
+	if (!startedAt) return 0;
+
+	const earnedMinutes = Math.floor((now - startedAt) / 60_000);
+	if (earnedMinutes < 1) return 0;
+
+	const account = getUserAccount(userId);
+	account.balance += earnedMinutes * EURO_PER_MINUTE;
+	activeVoiceSessions.set(userId, startedAt + earnedMinutes * 60_000);
+	return earnedMinutes * EURO_PER_MINUTE;
+}
+
+function settleAllActiveUsers() {
+	let changed = false;
+	for (const userId of activeVoiceSessions.keys()) changed = settleUser(userId) > 0 || changed;
+	if (changed) saveEconomy();
+}
+
+async function registerCommands() {
+	const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
+	await rest.put(Routes.applicationGuildCommands(client.user.id, GUILD_ID), {
+		body: commands,
+	});
+	console.log("Registered /balance and /buy.");
+}
+
 // ---- Client & player ----
 const client = new Client({
 	intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
+const activeVoiceSessions = new Map();
 
 const player = createAudioPlayer({
 	behaviors: { noSubscriber: NoSubscriberBehavior.Play },
@@ -111,16 +200,79 @@ client.on(Events.VoiceStateUpdate, (oldState, newState) => {
 	const wasIn = oldState.channelId === VOICE_CHANNEL_ID;
 	const isIn = newState.channelId === VOICE_CHANNEL_ID;
 
-	if (!wasIn && isIn) setTimeout(() => enqueue(SOUNDS.join), JOIN_DELAY_MS);
-	else if (wasIn && !isIn) enqueue(SOUNDS.leave);
+	if (!wasIn && isIn) {
+		activeVoiceSessions.set(newState.id, Date.now());
+		setTimeout(() => enqueue(SOUNDS.join), JOIN_DELAY_MS);
+	} else if (wasIn && !isIn) {
+		settleUser(oldState.id);
+		activeVoiceSessions.delete(oldState.id);
+		saveEconomy();
+		enqueue(SOUNDS.leave);
+	}
 	// mute/deafen/stream changes keep the same channel, so they're ignored
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+	if (interaction.isAutocomplete()) {
+		if (interaction.commandName !== "buy") return;
+		const account = getUserAccount(interaction.user.id);
+		const query = interaction.options.getString("sound", true).toLowerCase();
+		const choices = SHOP_SOUNDS.filter(
+			(sound) => !account.sounds.includes(sound) && sound.toLowerCase().includes(query),
+		).slice(0, 25);
+		await interaction.respond(choices.map((sound) => ({ name: `${sound} - €1`, value: sound })));
+		return;
+	}
+
+	if (!interaction.isChatInputCommand()) return;
+
+	if (interaction.commandName === "balance") {
+		settleUser(interaction.user.id);
+		const account = getUserAccount(interaction.user.id);
+		saveEconomy();
+		await interaction.reply(
+			`Balance: €${account.balance}\nOwned sounds: ${account.sounds.length ? account.sounds.join(", ") : "none"}`,
+		);
+		return;
+	}
+
+	if (interaction.commandName === "buy") {
+		settleUser(interaction.user.id);
+		const account = getUserAccount(interaction.user.id);
+		const sound = interaction.options.getString("sound", true);
+
+		if (!SHOP_SOUNDS.includes(sound)) {
+			await interaction.reply({ content: "That sound is not available.", ephemeral: true });
+			return;
+		}
+		if (account.sounds.includes(sound)) {
+			await interaction.reply({ content: "You already own that sound.", ephemeral: true });
+			return;
+		}
+		if (account.balance < 1) {
+			await interaction.reply({ content: "You need €1 to buy that sound.", ephemeral: true });
+			return;
+		}
+
+		account.balance -= 1;
+		account.sounds.push(sound);
+		saveEconomy();
+		await interaction.reply(`Bought **${sound}** for €1. Your balance is €${account.balance}.`);
+	}
 });
 
 client.once(Events.ClientReady, () => {
 	console.log(`Logged in as ${client.user.tag}`);
+	const guild = client.guilds.cache.get(GUILD_ID);
+	const voiceChannel = guild?.channels.cache.get(VOICE_CHANNEL_ID);
+	for (const member of voiceChannel?.members.values() ?? []) {
+		if (!member.user.bot) activeVoiceSessions.set(member.id, Date.now());
+	}
+	registerCommands().catch((err) => console.error("Failed to register commands:", err.message));
 	connect().catch(console.error);
 	// Watchdog: make sure we're always in the channel
 	setInterval(() => connect().catch(console.error), 30_000);
+	setInterval(settleAllActiveUsers, 60_000);
 });
 
 process.on("unhandledRejection", (err) =>
