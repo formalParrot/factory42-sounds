@@ -29,7 +29,7 @@ if (!DISCORD_TOKEN || !GUILD_ID || !VOICE_CHANNEL_ID) {
 const JOIN_DELAY_MS = 1500;
 const EURO_PER_MINUTE = 1;
 const ECONOMY_FILE = path.join(__dirname, "economy.json");
-const ECONOMY_ROLE_NAME = "create events";
+const ECONOMY_ROLE_NAME = "Convenience Store Worker";
 
 // ---- Sounds: join.mp3 and leave.mp3 are the default sounds ----
 function findSound(name) {
