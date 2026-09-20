@@ -140,6 +140,19 @@ function settleAllActiveUsers() {
 	if (changed) saveEconomy();
 }
 
+function getLeaderboardMessage() {
+	settleAllActiveUsers();
+	const entries = Object.entries(economy.users)
+		.sort(([, first], [, second]) => second.balance - first.balance)
+		.slice(0, 10);
+	const lines = entries.map(([userId, account], index) =>
+		`${index + 1}. <@${userId}> - €${account.balance}`,
+	);
+	return lines.length
+		? `**Euro leaderboard**\n${lines.join("\n")}`
+		: "The leaderboard is empty.";
+}
+
 async function registerCommands() {
 	const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
 	const registeredCommands = await rest.put(
@@ -288,7 +301,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 	if (!interaction.isChatInputCommand()) return;
 
-	if (["give", "take"].includes(interaction.commandName)) {
+	if (["give", "take", "leaderboard-public"].includes(interaction.commandName)) {
 		const hasEconomyRole = interaction.member?.roles.cache.has(ECONOMY_ROLE_ID);
 		if (!hasEconomyRole) {
 			await interaction.reply({
@@ -310,16 +323,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
 	}
 
 	if (interaction.commandName === "leaderboard") {
-		settleAllActiveUsers();
-		const entries = Object.entries(economy.users)
-			.sort(([, first], [, second]) => second.balance - first.balance)
-			.slice(0, 10);
-		const lines = entries.map(([userId, account], index) =>
-			`${index + 1}. <@${userId}> - €${account.balance}`,
-		);
-		await interaction.reply(
-			lines.length ? `**Euro leaderboard**\n${lines.join("\n")}` : "The leaderboard is empty.",
-		);
+		await interaction.reply({ content: getLeaderboardMessage(), ephemeral: true });
+		return;
+	}
+
+	if (interaction.commandName === "leaderboard-public") {
+		await interaction.reply(getLeaderboardMessage());
 		return;
 	}
 

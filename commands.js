@@ -51,6 +51,9 @@ const commands = [
 	new SlashCommandBuilder()
 		.setName("leaderboard")
 		.setDescription("Show the richest members"),
+	new SlashCommandBuilder()
+		.setName("leaderboard-public")
+		.setDescription("Post the richest members publicly (workers only)"),
 ].map((command) => command.toJSON());
 
 module.exports = commands;
