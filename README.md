@@ -16,7 +16,7 @@ Sits in one voice channel 24/7 and plays a sound when someone joins or leaves it
 5. Keep the default sounds as `sounds/join.mp3` and `sounds/leave.mp3`.
 6. Add purchasable sounds to `sounds/` with a `c-` prefix, such as `sounds/c-airhorn.mp3` or `sounds/c-applause.wav`. Only files with this prefix can be bought.
 7. Users can buy sounds with `/buy`, then equip one with `/equip`. The `c-` prefix is hidden in Discord.
-8. Create a server role named exactly `craete events`. Members with that role can see and use `/give` and `/take`; everyone else is blocked. The bot needs permission to manage slash-command permissions in the server.
+8. Create or use the role with ID `1551232729444786187`. Members with that role can see and use `/give` and `/take`; everyone else is blocked. The bot needs the server **Manage Server** permission to apply slash-command permissions.
 
 ## Keeping it online 24/7
 Run it on an always-on machine or VPS with a process manager:

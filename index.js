@@ -29,7 +29,7 @@ if (!DISCORD_TOKEN || !GUILD_ID || !VOICE_CHANNEL_ID) {
 const JOIN_DELAY_MS = 1500;
 const EURO_PER_MINUTE = 1;
 const ECONOMY_FILE = path.join(__dirname, "economy.json");
-const ECONOMY_ROLE_NAME = "Create Events";
+const ECONOMY_ROLE_ID = "1551232729444786187";
 
 // ---- Sounds: join.mp3 and leave.mp3 are the default sounds ----
 function findSound(name) {
@@ -149,15 +149,13 @@ async function registerCommands() {
 		},
 	);
 
-	const role = client.guilds.cache
-		.get(GUILD_ID)
-		?.roles.cache.find((guildRole) => guildRole.name === ECONOMY_ROLE_NAME);
+	const role = client.guilds.cache.get(GUILD_ID)?.roles.cache.get(ECONOMY_ROLE_ID);
 	const restrictedCommands = registeredCommands.filter((command) =>
 		["give", "take"].includes(command.name),
 	);
 	if (!role) {
 		console.error(
-			`Role "${ECONOMY_ROLE_NAME}" was not found; /give and /take remain hidden.`,
+			`Role ${ECONOMY_ROLE_ID} was not found; /give and /take remain hidden.`,
 		);
 		return;
 	}
@@ -177,7 +175,7 @@ async function registerCommands() {
 		);
 	}
 	console.log(
-		"Registered commands; /give and /take are restricted to the craete events role.",
+		`Registered commands; /give and /take are restricted to role ${ECONOMY_ROLE_ID}.`,
 	);
 }
 
@@ -304,9 +302,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 	if (!interaction.isChatInputCommand()) return;
 
 	if (["give", "take"].includes(interaction.commandName)) {
-		const hasEconomyRole = interaction.member?.roles.cache.some(
-			(role) => role.name === ECONOMY_ROLE_NAME,
-		);
+		const hasEconomyRole = interaction.member?.roles.cache.has(ECONOMY_ROLE_ID);
 		if (!hasEconomyRole) {
 			await interaction.reply({
 				content: "You do not have permission to use this command.",
