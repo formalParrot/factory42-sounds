@@ -55,6 +55,16 @@ function getShopSounds() {
 }
 
 const SHOP_SOUNDS = getShopSounds();
+const SOUND_PRICES = {
+	// Add sound filenames here when they should cost something other than €1.
+	// Example: "airhorn": 5,
+};
+const DEFAULT_SOUND_PRICE = 1;
+
+function getSoundPrice(sound) {
+	return SOUND_PRICES[sound] ?? DEFAULT_SOUND_PRICE;
+}
+
 const commands = [
 	new SlashCommandBuilder().setName("balance").setDescription("Show your sound balance"),
 	new SlashCommandBuilder()
@@ -220,7 +230,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 		const choices = SHOP_SOUNDS.filter(
 			(sound) => !account.sounds.includes(sound) && sound.toLowerCase().includes(query),
 		).slice(0, 25);
-		await interaction.respond(choices.map((sound) => ({ name: `${sound} - €1`, value: sound })));
+		await interaction.respond(
+			choices.map((sound) => ({ name: `${sound} - €${getSoundPrice(sound)}`, value: sound })),
+		);
 		return;
 	}
 
@@ -249,15 +261,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
 			await interaction.reply({ content: "You already own that sound.", ephemeral: true });
 			return;
 		}
-		if (account.balance < 1) {
-			await interaction.reply({ content: "You need €1 to buy that sound.", ephemeral: true });
+		const price = getSoundPrice(sound);
+		if (account.balance < price) {
+			await interaction.reply({ content: `You need €${price} to buy that sound.`, ephemeral: true });
 			return;
 		}
 
-		account.balance -= 1;
+		account.balance -= price;
 		account.sounds.push(sound);
 		saveEconomy();
-		await interaction.reply(`Bought **${sound}** for €1. Your balance is €${account.balance}.`);
+		await interaction.reply(`Bought **${sound}** for €${price}. Your balance is €${account.balance}.`);
 	}
 });
 
