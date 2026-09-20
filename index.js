@@ -1,14 +1,8 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const {
-	Client,
-	GatewayIntentBits,
-	Events,
-	REST,
-	Routes,
-	SlashCommandBuilder,
-} = require("discord.js");
+const { Client, GatewayIntentBits, Events, REST, Routes } = require("discord.js");
+const commands = require("./commands");
 const {
 	joinVoiceChannel,
 	getVoiceConnection,
@@ -65,19 +59,7 @@ function getSoundPrice(sound) {
 	return SOUND_PRICES[sound] ?? DEFAULT_SOUND_PRICE;
 }
 
-const commands = [
-	new SlashCommandBuilder().setName("balance").setDescription("Show your sound balance"),
-	new SlashCommandBuilder()
-		.setName("buy")
-		.setDescription("Buy a sound with your voice-channel earnings")
-		.addStringOption((option) =>
-			option
-				.setName("sound")
-				.setDescription("The sound to buy")
-				.setRequired(true)
-				.setAutocomplete(true),
-		),
-].map((command) => command.toJSON());
+
 
 function loadEconomy() {
 	try {
