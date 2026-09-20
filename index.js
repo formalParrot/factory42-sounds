@@ -323,7 +323,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 	}
 
 	if (interaction.commandName === "leaderboard") {
-		await interaction.reply({ content: getLeaderboardMessage(), ephemeral: true });
+		await interaction.deferReply({ ephemeral: true });
+		await interaction.editReply(getLeaderboardMessage());
 		return;
 	}
 
