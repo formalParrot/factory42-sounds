@@ -326,12 +326,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 	if (interaction.commandName === "leaderboard") {
 		await interaction.deferReply({ ephemeral: true });
-		await interaction.editReply(getLeaderboardMessage());
+		await interaction.editReply({
+			content: getLeaderboardMessage(),
+			allowedMentions: { parse: [] },
+		});
 		return;
 	}
 
 	if (interaction.commandName === "leaderboard-public") {
-		await interaction.reply(getLeaderboardMessage());
+		await interaction.reply({
+			content: getLeaderboardMessage(),
+			allowedMentions: { parse: [] },
+		});
 		return;
 	}
 
